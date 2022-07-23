@@ -1,0 +1,12 @@
+[Unit]
+Description=RaspberryPI native dashcam script to be schedule after boot
+Wants=network.target
+After=network.target
+
+[Service]
+ExecStart=/opt/dashcam/.venv/bin/python3 /opt/dashcam/dashcam.py
+WorkingDirectory=/opt/dashcam
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
