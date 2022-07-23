@@ -6,6 +6,13 @@ Main purpose is to have a trustfull software following the requirements
 of GDPR rules in Germany (DSGVO) to store data only temporary and save
 video chunks only in cases of accidents/emergencies.
 
+Requirements:
+    - 32-Bit Raspberry Pi OS (necessary to run picamera v1!)
+    - min. 1 CPU
+    - min. 128MB RAM
+    - Pi Camera attached
+    - legacy camera support enabled in raspi-config
+
 A single core and 512MB of RAM is plenty enough to have a 1080p 
 dashcam running.
 For a nicer interaction, this application allows the usage of a button
