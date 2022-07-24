@@ -12,9 +12,9 @@ from random import randbytes
 class Dashcam():
     def __init__(
             self, sequence_count=10, sequence_length=60, resolution=(1920, 1080),
-            video_name_prefix="dashcam_vid", video_file_path="/dashcam",
-            pin_btn=11, pin_led_cpy=12, pin_led_pwr=13, salt_bytes=4,
-            led_pwr_dim_perc=5, pwr_led="on"):
+            video_type="h264", video_name_prefix="dashcam_vid", bitrate = 17000000,
+            framerate=30, video_file_path="/dashcam", pin_btn=11, pin_led_cpy=12,
+            pin_led_pwr=13, salt_bytes=4, led_pwr_dim_perc=5, pwr_led="on"):
         self.pin_btn = pin_btn
         self.pin_led_pwr = pin_led_pwr
         self.pin_led_cpy = pin_led_cpy
@@ -29,12 +29,14 @@ class Dashcam():
         self.video_name_prefix = video_name_prefix
         self.video_file_path=video_file_path
         self.video_file_path_legal=f"{self.video_file_path}/legal"
+        self.video_type = video_type if video_type in ("h264", "mjpeg") else "h264"
+        self.video_bit_rate = bitrate
+        self.video_frame_rate = framerate
 
         # using a salt to not eventually overwrite files
         # after an unexpected reboot in car; is like
         # a unique identifier for an ongoing record session
         self.video_name_salt = randbytes(salt_bytes).hex()
-        self.video_type = "h264"
 
         self.LED_data = LED(self.pin_led_cpy)
         self.LED_power = LED(self.pin_led_pwr)
@@ -43,7 +45,8 @@ class Dashcam():
         self.lock = Lock()
 
         self.camera = picamera.PiCamera(
-            resolution=self.video_resolution
+            resolution=self.video_resolution,
+            framerate=self.video_frame_rate
         )
 
     def __del__(self):
@@ -58,7 +61,9 @@ class Dashcam():
             f"{ctr}.{self.video_type}"
         )
         print(f"Recording to '{video_filename}'.")
-        self.camera.start_recording(video_filename)
+        self.camera.start_recording(
+            video_filename, format=self.video_type, bitrate=self.video_bit_rate
+        )
         self.camera.wait_recording(self.video_sequence_seconds)
 
         while True:
@@ -242,10 +247,6 @@ def main():
         )
     )
     parser.add_argument(
-        "-r", "--video_resolution", metavar="R", nargs=2, type=int, required=False,
-        default=(1920, 1080), help="Length of a single stored video chunk."
-    )
-    parser.add_argument(
         "-p", "--video_file_path", metavar="P", type=str, required=False,
         default="/opt/dashcam", help="Location to store dashcam video chunks"
     )
@@ -254,6 +255,18 @@ def main():
         default="dashcam-video", help=(
             "Filename prefix for the locally stored video file chunks"
         )
+    )
+    parser.add_argument(
+        "-r", "--video_resolution", metavar="R", nargs=2, type=int, required=False,
+        default=(1920, 1080), help="Length of a single stored video chunk."
+    )
+    parser.add_argument(
+        "-br", "--video_bitrate", metavar="BR", type=int, required=False,
+        default=7000000, help="Bitrate used to store videos."
+    )
+    parser.add_argument(
+        "-vf", "--video_format", metavar="VF", type=str, required=False,
+        default="h264", choices=("h264","mjpeg"),help="File format used to store videos."
     )
     parser.add_argument(
         "-b", "--pin_button", metavar="B", type=int, required=False,
@@ -282,13 +295,13 @@ def main():
 
     args = parser.parse_args()
 
-    print(str(args))
-
     video_chunk_duration = args.video_chunk_duration
     video_chunk_count = args.video_chunk_count
-    video_resolution = args.video_resolution
     video_file_path = args.video_file_path
     video_file_prefix = args.video_file_prefix
+    video_resolution = args.video_resolution
+    video_bitrate = args.video_bitrate
+    video_format = args.video_format
     pin_button = args.pin_button
     pin_led_power = args.pin_led_power
     pin_led_copy = args.pin_led_copy
@@ -298,10 +311,10 @@ def main():
 
     dashcam = Dashcam(
         sequence_count=video_chunk_count, sequence_length=video_chunk_duration,
-        resolution=video_resolution, video_name_prefix=video_file_prefix,
-        video_file_path=video_file_path, pin_btn=pin_button, pin_led_cpy=pin_led_copy,
-        pin_led_pwr=pin_led_power, led_pwr_dim_perc=pin_power_dim_percent,
-        pwr_led=power_led_type
+        resolution=video_resolution, video_type=video_format, bitrate=video_bitrate,
+        video_name_prefix=video_file_prefix, video_file_path=video_file_path,
+        pin_btn=pin_button, pin_led_cpy=pin_led_copy, pin_led_pwr=pin_led_power,
+        led_pwr_dim_perc=pin_power_dim_percent, pwr_led=power_led_type
     )
 
 
