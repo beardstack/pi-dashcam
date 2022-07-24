@@ -141,7 +141,7 @@ class Dashcam():
             )
         ]
 
-    def get_video_file_list_legal(self, video_file_list, buffer=0):
+    def get_video_file_list_legal(self, video_file_list, reverse=True, buffer=0):
         prefix_match_sorted_reduced_video_fileid_list = sorted(
             [
                 file.removeprefix(
@@ -155,7 +155,7 @@ class Dashcam():
                 lambda x: (
                     f"{int(x.split('-')[1] == self.video_name_salt)}{x}"
                 )
-            ), reverse= True
+            ), reverse=reverse
         )
 
         return [
@@ -170,7 +170,7 @@ class Dashcam():
         video_file_list_legal = self.get_video_file_list_legal(
             self.get_directory_file_list(
                 self.video_file_path, self.video_type
-            )
+            ), reverse=False
         )
 
         for video_file in video_file_list_legal:
