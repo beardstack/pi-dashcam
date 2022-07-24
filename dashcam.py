@@ -295,8 +295,6 @@ def main():
 
     args = parser.parse_args()
 
-    print(str(args))
-
     video_chunk_duration = args.video_chunk_duration
     video_chunk_count = args.video_chunk_count
     video_file_path = args.video_file_path
