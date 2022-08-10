@@ -6,16 +6,14 @@
 # You will probably asked for sudo password, if you
 # did not have the default settings of Raspberry PI
 # OS.
-# Please feel free to adjust to your needs.
+# Please feel free to adjust to your needs, e.g.
+# adding some mount info like sda1 for external usb sticks
 
 DASHCAM_ROOT="/opt/dashcam"
 DASHCAM_ROOT_LEGAL=$DASHCAM_ROOT"/legal"
 
-echo "Generate dashcam root folder '"$DASHCAM_ROOT"' if not exists..."
-sudo mkdir -p $DASHCAM_ROOT
-
-echo "Generate dashcam root legal folder '"$DASHCAM_ROOT_LEGAL"' if not exists..."
-sudo mkdir -p $DASHCAM_ROOT_LEGAL
+echo "Install necessary packages (python-venv, pip)"
+sudo apt install python3-venv python3-pip
 
 for DCFile in dashcam.py led.py switch.py;
 do

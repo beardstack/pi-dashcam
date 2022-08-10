@@ -9,11 +9,67 @@ from time import time, sleep
 from threading import Thread, Lock
 from random import randbytes
 
+
+def get_usb_storage_device(desired_device=None):
+    with open("/proc/partitions") as file:
+        file.readline() #skip heading line
+        file.readline() #skip empty line
+        device_info = [
+            [ item.strip() for item in line.strip().split() ]
+            for line in file
+        ]
+        devices = [
+            device[3]
+            for device in device_info
+            if len(device) >= 3 and device[0] in ("8", "259")
+        ]
+        primary_devices = [
+            device[3]
+            for device in device_info
+            if len(device) >= 3 and device[0] in ("8", "259") and (int(device[1]) % 16) == 0
+        ]
+
+        block_class_path = "/sys/class/block"
+
+        primary_usb_devices = [
+            device
+            for device in primary_devices
+            if (
+                os.path.islink(f"{block_class_path}/{device}") and
+                os.path.realpath(f"{block_class_path}/{device}").find("/usb") > 0
+            )
+        ]
+
+        usb_partitions = sorted(
+            [
+                partition
+                for partition in devices
+                for usb_device in primary_usb_devices
+                if partition.startswith(usb_device) and usb_device != partition
+            ],
+            reverse=True #assuming the last partition of the last is correct
+        )
+
+        if desired_device is not None:
+            if desired_device in usb_partitions:
+                return desired_device
+            return None
+        return usb_partitions[0]
+
+def mount_usb_device(device, id):
+    mnt_path = f"/mnt/{id}"
+    if not os.path.ismount(mnt_path):
+        os.system(f"mkdir -p {mnt_path}")
+        os.system(f"mount {device} {mnt_path}")
+    return mnt_path
+
+
+
 class Dashcam():
     def __init__(
             self, sequence_count=10, sequence_length=60, resolution=(1920, 1080),
             video_type="h264", video_name_prefix="video-dashcam", bitrate = 17000000,
-            framerate=30, video_file_path="/dashcam", pin_btn_cpy=11, pin_btn_info=33,
+            framerate=30, video_file_path="/opt/dashcam", pin_btn_cpy=11, pin_btn_info=33,
             pin_btn_pwr=35, pin_btn_stop=37, pin_led_cpy=12, pin_led_pwr=13,
             pin_led_info=15, led_pwr_dim_perc=5, salt_bytes=4):
         self.pin_btn_cpy = pin_btn_cpy
@@ -62,6 +118,13 @@ class Dashcam():
         self.camera_state = 0 #0: off, 1: turndown, 2: on
         self.info_led_state = 0
         self.segment_ctr = 0
+
+    def get_video_id(self):
+        return self.video_name_salt
+
+    def set_video_path(self, path):
+        self.video_file_path = path
+        self.video_file_path_legal = f"{self.video_file_path}/legal"
 
     def __del__(self):
         del self.LED_data, self.LED_power
@@ -234,7 +297,7 @@ class Dashcam():
     def _button_copy_functor(self, input):
         if input == 0:
             self.save_video_file_legal(self.LED_data)
-    
+
     def _button_start_functor(self, input):
         if input == 0:
             if self.camera_state == 0:
@@ -260,9 +323,20 @@ class Dashcam():
             # have more than 100 blinking states, lets keep it 0 < x < 100 !
             self.info_led_state = (self.info_led_state + 1) % 100
 
+    def do_warning(self):
+        # just blink at info LED!
+        # can be used when e.g. mountpoint is unavailable!!!
+        for _ in range(10):
+            self.LED_info.set_on()
+            sleep(0.5)
+            self.LED_info.set_off()
+            sleep(0.5)
 
 
     def start(self):
+        os.makedirs(self.video_file_path, exist_ok=True)
+        os.makedirs(self.video_file_path_legal, exist_ok=True)
+
         self.power_led_thread = Thread(target=self._dashcam_powerled_thread)
         self.clean_thread = Thread(target=self._dashcam_file_cleanup_thread)
 
@@ -364,6 +438,13 @@ def main():
         "-d", "--pin_power_dim_percent", metavar="LPD", type=int, required=False,
         default=5, help="Percent dim for the Power LED; if it might be to bright."
     )
+    parser.add_argument(
+        "--external_usb_storage_device", metavar="DEVICE", type=str, required=False,
+        help=(
+            "Dev shortcut, e.g. sda1, for a partition/device you want to use as "
+            "video storage. Will be directly written on it."
+        )
+    )
 
     args = parser.parse_args()
 
@@ -382,6 +463,7 @@ def main():
     pin_led_copy = args.pin_led_copy
     pin_led_info = args.pin_led_info
     pin_power_dim_percent = args.pin_power_dim_percent
+    usb_storage = args.external_usb_storage_device if hasattr(args,'external_usb_storage_device') else None
 
 
     dashcam = Dashcam(
@@ -394,6 +476,14 @@ def main():
         led_pwr_dim_perc=pin_power_dim_percent
     )
 
+
+    if usb_storage is not None:
+        usb_device = get_usb_storage_device(usb_storage)
+        if usb_device is not None:
+            mount_path = mount_usb_device(f"/dev/{usb_device}", dashcam.get_video_id())
+            dashcam.set_video_path(mount_path)
+        else:
+            dashcam.do_warning()
 
     dashcam.start()
     dashcam.join_clean_thread()
