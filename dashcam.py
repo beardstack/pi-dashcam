@@ -145,14 +145,18 @@ class Dashcam():
 
         while self.camera_state > 1:
             self.segment_ctr += 1
-            self.video_filename = (
+            tmp_video_filename = (
                 f"{self.video_name_prefix}_"
                 f"{int(time())}-{self.video_name_salt}-"
                 f"{self.segment_ctr}.{self.video_type}"
             )
-            video_path = f"{self.video_file_path}/{self.video_filename}"
+            video_path = f"{self.video_file_path}/{tmp_video_filename}"
             print(f"Recording to '{video_path}'.")
             self.camera.split_recording(video_path)
+            # as the copy thread callback might be a bit too fast,
+            # we manage to set the final new filename AFTER the switch
+            # which guarantees, that the file is really finished.
+            self.video_filename = tmp_video_filename
             self.camera.wait_recording(self.video_sequence_seconds)
         self.camera.stop_recording()
         self.camera_state = 0
