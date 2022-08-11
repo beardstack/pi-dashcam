@@ -118,6 +118,7 @@ class Dashcam():
         self.camera_state = 0 #0: off, 1: turndown, 2: on
         self.info_led_state = 0
         self.segment_ctr = 0
+        self.video_filename = ""
 
     def get_video_id(self):
         return self.video_name_salt
@@ -130,26 +131,28 @@ class Dashcam():
         del self.LED_data, self.LED_power
 
     def _dashcam_video_thread(self):
-        video_filename = (
-            f"{self.video_file_path}/{self.video_name_prefix}_"
+        self.video_filename = (
+            f"{self.video_name_prefix}_"
             f"{int(time())}-{self.video_name_salt}-"
             f"{self.segment_ctr}.{self.video_type}"
         )
-        print(f"Recording to '{video_filename}'.")
+        video_path = f"{self.video_file_path}/{self.video_filename}"
+        print(f"Recording to '{video_path}'.")
         self.camera.start_recording(
-            video_filename, format=self.video_type, bitrate=self.video_bit_rate
+            video_path, format=self.video_type, bitrate=self.video_bit_rate
         )
         self.camera.wait_recording(self.video_sequence_seconds)
 
         while self.camera_state > 1:
             self.segment_ctr += 1
-            video_filename = (
-                f"{self.video_file_path}/{self.video_name_prefix}_"
+            self.video_filename = (
+                f"{self.video_name_prefix}_"
                 f"{int(time())}-{self.video_name_salt}-"
                 f"{self.segment_ctr}.{self.video_type}"
             )
-            print(f"Recording to '{video_filename}'.")
-            self.camera.split_recording(video_filename)
+            video_path = f"{self.video_file_path}/{self.video_filename}"
+            print(f"Recording to '{video_path}'.")
+            self.camera.split_recording(video_path)
             self.camera.wait_recording(self.video_sequence_seconds)
         self.camera.stop_recording()
         self.camera_state = 0
@@ -274,14 +277,35 @@ class Dashcam():
             ), reverse=False
         )
 
+        timestamp = int(time())
+        legal_path = f"{self.video_file_path_legal}/{timestamp}_utc"
+        os.makedirs(legal_path, exist_ok=True)
+
+        current_video = self.video_filename
+        is_active_saving = current_video in video_file_list_legal
+        if is_active_saving:
+            video_file_list_legal.remove(current_video)
+
         for video_file in video_file_list_legal:
             src = f"{self.video_file_path}/{video_file}"
-            dst = f"{self.video_file_path_legal}/INCIDENT_{video_file}"
+            dst = f"{legal_path}/INCIDENT_{video_file}"
             print(f"Copy '{src}' to '{dst}'.")
             try:
                 shutil.copyfile(src, dst)
             except FileNotFoundError:
                 print(f"WARNING! File '{src}' is gone. Ignoreing file. Continue")
+        while self.video_filename == current_video:
+            #waiting for current video to finish
+            sleep(5)
+        else:
+            src = f"{self.video_file_path}/{current_video}"
+            dst = f"{legal_path}/INCIDENT_{current_video}"
+            print(f"Copy '{src}' to '{dst}'.")
+            try:
+                shutil.copyfile(src, dst)
+            except FileNotFoundError:
+                print(f"WARNING! File '{src}' is gone. Ignoreing file. Continue")
+
         print("Copy done.")
 
         for round in range(int(self.pin_blink_seconds / self.pin_blink_on_seconds)):
