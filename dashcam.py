@@ -298,10 +298,10 @@ class Dashcam():
                 shutil.copyfile(src, dst)
             except FileNotFoundError:
                 print(f"WARNING! File '{src}' is gone. Ignoreing file. Continue")
-        while self.video_filename == current_video:
+        while is_active_saving and self.video_filename == current_video:
             #waiting for current video to finish
             sleep(5)
-        else:
+        if is_active_saving:
             src = f"{self.video_file_path}/{current_video}"
             dst = f"{legal_path}/INCIDENT_{current_video}"
             print(f"Copy '{src}' to '{dst}'.")
