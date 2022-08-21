@@ -1,7 +1,8 @@
 [Unit]
 Description=RaspberryPI native dashcam script to be schedule after boot
 Wants=network.target
-After=network.target
+Requires=pigpiod.service
+After=pigpiod.service
 
 [Service]
 ExecStart=/opt/dashcam/.venv/bin/python3 /opt/dashcam/dashcam.py

@@ -8,6 +8,8 @@ from switch import Switch
 from time import time, sleep
 from threading import Thread, Lock
 from random import randbytes
+from movement import Adxl345Spi
+from math import fabs
 
 
 def get_usb_storage_device(desired_device=None):
@@ -69,9 +71,9 @@ class Dashcam():
     def __init__(
             self, sequence_count=10, sequence_length=60, resolution=(1920, 1080),
             video_type="h264", video_name_prefix="video-dashcam", bitrate = 17000000,
-            framerate=30, video_file_path="/opt/dashcam", pin_btn_cpy=11, pin_btn_info=33,
-            pin_btn_pwr=35, pin_btn_stop=37, pin_led_cpy=12, pin_led_pwr=13,
-            pin_led_info=15, led_pwr_dim_perc=5, salt_bytes=4):
+            framerate=30, video_file_path="/opt/dashcam", pin_btn_pwr=11, pin_btn_cpy=12,
+            pin_btn_stop=13, pin_btn_info=15, pin_led_cpy=29, pin_led_pwr=33,
+            pin_led_info=37, led_pwr_dim_perc=5, g_force_limit=1.5, salt_bytes=4):
         self.pin_btn_cpy = pin_btn_cpy
         self.pin_btn_pwr = pin_btn_pwr
         self.pin_btn_info = pin_btn_info
@@ -82,6 +84,7 @@ class Dashcam():
         self.pin_led_pwr_dim_percent = led_pwr_dim_perc
         self.pin_blink_seconds = 2
         self.pin_blink_on_seconds = 0.1
+        self.g_force_limit = g_force_limit
 
         self.video_sequence_seconds = sequence_length
         self.video_sequence_count = sequence_count
@@ -110,6 +113,8 @@ class Dashcam():
 
         self.file_lock = Lock()
         self.camera_lock = Lock()
+
+        self.adxl345 = Adxl345Spi()
 
         self.camera = picamera.PiCamera(
             resolution=self.video_resolution,
@@ -239,6 +244,21 @@ class Dashcam():
             sleep(round_time)
             round_cntr += round_time
 
+    def _g_force_surveillance(self):
+        for _ in range(5):
+            #cleanup at every start/coldstart (like at car ;) )
+            x,y,z = self.adxl345.get_acceleration()
+            sleep(1)
+        while self.camera_state > 0:
+            accl_xyz = self.adxl345.get_acceleration()
+            if any(
+                fabs(val) > self.g_force_limit
+                for val in accl_xyz
+            ):
+                self.save_video_file_legal(self.LED_data)
+            sleep(0.5)
+        self.adxl345.stop()
+
     def get_directory_file_list(self, path, filetype):
         return [
             file
@@ -332,8 +352,10 @@ class Dashcam():
                 self.camera_lock.acquire()
                 self.camera_state = 2
                 self.video_thread = Thread(target=self._dashcam_video_thread)
+                self.g_force_thread = Thread(target=self._g_force_surveillance)
                 self.video_thread.start()
                 self.LED_power.set_duty_cycle(self.pin_led_pwr_dim_percent)
+                self.g_force_thread.start()
                 sleep(10) #mainly user notification via LED on
                 self.camera_lock.release()
 
@@ -343,6 +365,10 @@ class Dashcam():
                 self.camera_lock.acquire()
                 self.camera_state = 1
                 self.LED_power.set_off()
+                self.video_thread.join()
+                self.g_force_thread.join()
+                del self.video_thread
+                del self.g_force_thread
                 self.camera_lock.release()
 
     def _button_info_functor(self, input):
@@ -436,35 +462,39 @@ def main():
     )
     parser.add_argument(
         "-lc", "--pin_led_copy", metavar="PLC", type=int, required=False,
-        default=15, help="Pin number in GPIO.BOARD layout for a data-copy LED."
+        default=29, help="Pin number in GPIO.BOARD layout for a data-copy LED."
     )
     parser.add_argument(
         "-lp", "--pin_led_power", metavar="PLP", type=int, required=False,
-        default=12, help="Pin number in GPIO.BOARD layout for a power LED."
+        default=33, help="Pin number in GPIO.BOARD layout for a power LED."
     )
     parser.add_argument(
         "-li", "--pin_led_info", metavar="PLP", type=int, required=False,
-        default=13, help="Pin number in GPIO.BOARD layout for an info LED."
-    )
-    parser.add_argument(
-        "-bc", "--pin_button_copy", metavar="PBC", type=int, required=False,
-        default=11, help="Pin number in GPIO.BOARD layout for a data copy button."
+        default=37, help="Pin number in GPIO.BOARD layout for an info LED."
     )
     parser.add_argument(
         "-bp", "--pin_button_power", metavar="PBP", type=int, required=False,
-        default=35, help="Pin number in GPIO.BOARD layout for a start button."
+        default=11, help="Pin number in GPIO.BOARD layout for a start button."
+    )
+    parser.add_argument(
+        "-bc", "--pin_button_copy", metavar="PBC", type=int, required=False,
+        default=12, help="Pin number in GPIO.BOARD layout for a data copy button."
     )
     parser.add_argument(
         "-bs", "--pin_button_stop", metavar="PBS", type=int, required=False,
-        default=37, help="Pin number in GPIO.BOARD layout for a stop button."
+        default=13, help="Pin number in GPIO.BOARD layout for a stop button."
     )
     parser.add_argument(
         "-bi", "--pin_button_info", metavar="PBI", type=int, required=False,
-        default=33, help="Pin number in GPIO.BOARD layout for a info-led control button."
+        default=15, help="Pin number in GPIO.BOARD layout for a info-led control button."
     )
     parser.add_argument(
         "-d", "--pin_power_dim_percent", metavar="LPD", type=int, required=False,
         default=5, help="Percent dim for the Power LED; if it might be to bright."
+    )
+    parser.add_argument(
+        "-g", "--g_force_limit", metavar="G", type=int, required=False, default=1.5,
+        help="Threshold in terms of g-Force, when a data copy should be triggered."
     )
     parser.add_argument(
         "--external_usb_storage_device", metavar="DEVICE", type=str, required=False,
@@ -491,6 +521,7 @@ def main():
     pin_led_copy = args.pin_led_copy
     pin_led_info = args.pin_led_info
     pin_power_dim_percent = args.pin_power_dim_percent
+    g_force_limit = args.g_force_limit
     usb_storage = args.external_usb_storage_device if hasattr(args,'external_usb_storage_device') else None
 
 
@@ -501,14 +532,14 @@ def main():
         pin_btn_cpy=pin_button_copy, pin_btn_pwr=pin_button_power,
         pin_btn_info=pin_button_info, pin_btn_stop=pin_button_stop,
         pin_led_cpy=pin_led_copy, pin_led_pwr=pin_led_power, pin_led_info=pin_led_info,
-        led_pwr_dim_perc=pin_power_dim_percent
+        led_pwr_dim_perc=pin_power_dim_percent, g_force_limit=g_force_limit
     )
 
 
     if usb_storage is not None:
         usb_device = get_usb_storage_device(usb_storage)
         if usb_device is not None:
-            mount_path = mount_usb_device(f"/dev/{usb_device}", dashcam.get_video_id())
+            mount_path = mount_usb_device(f"/dev/{usb_device}", "dashcam-videodata")
             dashcam.set_video_path(mount_path)
         else:
             dashcam.do_warning()
