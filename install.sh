@@ -13,7 +13,7 @@ DASHCAM_ROOT="/opt/dashcam"
 DASHCAM_ROOT_LEGAL=$DASHCAM_ROOT"/legal"
 
 echo "Install necessary packages (python-venv, pip)"
-sudo apt install python3-venv python3-pip
+sudo apt install python3-venv python3-pip pigpio
 
 for DCFile in dashcam.py led.py switch.py;
 do
@@ -25,13 +25,13 @@ done
 echo "Setting Python3 virtual env '.venv' at '"$DASHCAM_ROOT"/.venv'"
 sudo python3 -m venv $DASHCAM_ROOT/.venv
 sudo $DASHCAM_ROOT/.venv/bin/pip3 install --upgrade pip
-sudo $DASHCAM_ROOT/.venv/bin/pip3 install picamera RPi.GPIO
+sudo $DASHCAM_ROOT/.venv/bin/pip3 install picamera RPi.GPIO pigpio
 
 echo "Setup systemd service at /etc/systemd/system/dashcam.service"
 sudo cp dashcam.service.example /etc/systemd/system/dashcam.service
 echo "Reload systemctl daemon service"
 sudo systemctl daemon-reload
 echo "Prepare dashcam service to start after reboot"
-sudo systemctl enable dashcam.service
+sudo systemctl enable dashcam.service pigpiod.service
 echo "Start dashcam service"
-sudo systemctl start dashcam.service
+sudo systemctl start pigpiod.service dashcam.service
